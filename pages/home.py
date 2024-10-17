@@ -8,6 +8,7 @@ from components.charts import (
     get_heat_losses,
     SET_outputs_chart,
     adaptive_chart,
+    speed_temp_pmv,
 )
 from components.dropdowns import (
     model_selection,
@@ -277,6 +278,13 @@ def update_chart(inputs: dict, function_selection: str):
                 inputs=inputs,
                 units=units,
             )
+
+    elif chart_selected == Charts.wind_temp_chart.value.name:
+        if (
+            selected_model == Models.PMV_ashrae.name
+            and function_selection == Functionalities.Default.value
+        ):
+            image = speed_temp_pmv(inputs=inputs, model="ashrae", units=units)
 
     elif chart_selected == Charts.adaptive_en.value.name:
         if function_selection == Functionalities.Default.value:

@@ -15,7 +15,7 @@ from utils.my_config_file import (
 )
 from utils.website_text import TextHome
 import matplotlib
-from pythermalcomfort.models import adaptive_en, adaptive_ashrae
+from pythermalcomfort.models import adaptive_en, adaptive_ashrae, cooling_effect
 from pythermalcomfort.psychrometrics import t_o, psy_ta_rh
 
 matplotlib.use("Agg")
@@ -1077,4 +1077,149 @@ def SET_outputs_chart(
         height=600,
         width=600,
     )
+    return fig
+
+
+def speed_temp_pmv(
+    inputs: dict = None,
+    model: str = "iso",
+    units: str = "SI",
+):
+    results = []
+    met, clo, tr, t_db, v, rh = get_inputs(inputs)
+    clo_d = clo_dynamic(clo, met)
+    if units == "IP":
+        v = v
+        t_db = (5.0 / 9.0) * (t_db - 32)
+
+    else:
+        v = 0.3048 * v
+
+    vr = v_relative(v, met)
+    pmv_limits = [-0.5, 0.5]
+    clo_d = clo_dynamic(
+        clo=inputs[ElementsIDs.clo_input.value], met=inputs[ElementsIDs.met_input.value]
+    )
+    for pmv_limit in pmv_limits:
+        for vr in np.arange(0.1, 0.9, 0.1):
+
+            def function(x):
+
+                pmv_value = (
+                    pmv(
+                        x,
+                        x,
+                        vr=vr,
+                        rh=inputs[ElementsIDs.rh_input.value],
+                        met=inputs[ElementsIDs.met_input.value],
+                        clo=clo_d,
+                        wme=0,
+                        standard=model,
+                        units="SI",
+                        limit_inputs=False,
+                    )
+                    - pmv_limit
+                )
+                return pmv_value
+
+            try:
+                temp = optimize.brentq(function, 10, 40)
+                if units == "SI":
+                    results.append(
+                        {
+                            "vr": vr,
+                            "temp": temp,
+                            "pmv_limit": pmv_limit,
+                        }
+                    )
+                else:
+                    results.append(
+                        {
+                            "vr": vr * 3.28084,
+                            "temp": temp * (9.0 / 5.0) + 32,
+                            "pmv_limit": pmv_limit,
+                        }
+                    )
+
+            except ValueError:
+                continue
+
+    df = pd.DataFrame(results)
+    fig = go.Figure()
+    # Define trace1
+    fig.add_trace(
+        go.Scatter(
+            x=df[df["pmv_limit"] == pmv_limits[0]]["temp"],
+            y=df[df["pmv_limit"] == pmv_limits[0]]["vr"],
+            mode="lines",
+            name=f"PMV {pmv_limits[0]}",
+            showlegend=False,
+            line=dict(color="rgba(0,0,0,0)"),
+        )
+    )
+    # Define trace2
+    fig.add_trace(
+        go.Scatter(
+            x=df[df["pmv_limit"] == pmv_limits[1]]["temp"],
+            y=df[df["pmv_limit"] == pmv_limits[1]]["vr"],
+            mode="lines",
+            fill="tonextx",
+            fillcolor="rgba(59, 189, 237, 0.7)",
+            name=f"PMV {pmv_limits[1]}",
+            showlegend=False,
+            line=dict(color="rgba(0,0,0,0)"),
+        )
+    )
+
+    # Define input point
+    fig.add_trace(
+        go.Scatter(
+            x=[inputs[ElementsIDs.t_db_input.value]],
+            y=[inputs[ElementsIDs.v_input.value]],
+            mode="markers",
+            marker=dict(color="red"),
+            name="Input",
+            showlegend=False,
+        )
+    )
+
+    fig.update_layout(
+        xaxis_title=(
+            "Operative Temperature [°C]"
+            if units == UnitSystem.SI.value
+            else "Operative Temperature [°F]"
+        ),
+        # x title
+        yaxis_title=(
+            "Relative Air Speed [m/s]"
+            if units == UnitSystem.SI.value
+            else "Relative Air Speed [fp/s]"
+        ),
+        # y title
+        template="plotly_white",
+        margin=dict(l=10, t=0),
+        height=500,
+        width=680,
+        xaxis=dict(
+            range=[20, 34] if units == UnitSystem.SI.value else [68, 94],  # x range
+            tickmode="linear",
+            tick0=20 if units == UnitSystem.SI.value else 65,
+            dtick=2 if units == UnitSystem.SI.value else 2,
+            linecolor="lightgrey",
+            gridcolor="lightgray",
+            showgrid=True,
+            mirror=True,
+        ),
+        yaxis=dict(
+            range=[0.0, 1.2] if units == UnitSystem.SI.value else [0, 4],  # y range
+            tickmode="linear",
+            tick0=0.0,
+            dtick=0.1 if units == UnitSystem.SI.value else 0.5,
+            linecolor="lightgrey",
+            gridcolor="lightgray",
+            showgrid=True,
+            mirror=True,
+        ),
+    )
+
     return fig
